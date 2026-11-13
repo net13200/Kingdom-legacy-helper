@@ -126,3 +126,16 @@ export function setFinalRound(c: Campaign, isFinal: boolean): ActionResult {
 export function setRoundNotes(c: Campaign, round: number, notes: string): Campaign {
   return { ...c, rounds: c.rounds.map((r) => (r.number === round ? { ...r, notes } : r)) };
 }
+
+/**
+ * Deck size for a new round: last round's deck plus the cards discovered this round
+ * (a parchment card is destroyed, so it adds nothing). Null when there is nothing to base it on.
+ */
+export function carryOverDeck(c: Campaign): { previous: number; added: number; total: number } | null {
+  if (c.round.number < 2 || c.turn.number > 0) return null;
+  const previous = c.rounds.find((r) => r.number === c.round.number - 1)?.deckSize ?? null;
+  const current = currentRecord(c);
+  if (previous === null || !current || current.discovery === "pending") return null;
+  const added = current.discovery === "done" ? current.discovered.length - (current.parchment ? 1 : 0) : 0;
+  return { previous, added, total: previous + added };
+}

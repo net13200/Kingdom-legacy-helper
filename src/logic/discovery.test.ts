@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { newCampaign } from "./defaults";
 import {
+  carryOverDeck,
   cardsUntilFinal,
   confirmDiscovery,
   discoverByEffect,
@@ -13,7 +14,7 @@ import {
   upcoming,
 } from "./discovery";
 import { updateCard } from "./kingdom";
-import { endTurn, finishGame, isFinalRound, setDeckCount, startNextRound, startTurn } from "./turn";
+import { endRound, endTurn, finishGame, isFinalRound, setDeckCount, startNextRound, startTurn } from "./turn";
 import type { Campaign } from "./types";
 
 const fresh = () => newCampaign("T", "c1", new Date("2026-01-01"));
@@ -112,5 +113,35 @@ describe("discovery sequencing", () => {
   it("a card effect can discover #70 too", () => {
     const c = discoverByEffect(nextRound(fresh()), 70).campaign;
     expect(c.finalRound).toBe(2);
+  });
+});
+
+describe("carry-over deck size", () => {
+  const playRound = (c: Campaign, deck: number) => {
+    c = setDeckCount(c, deck).campaign;
+    c = endTurn(startTurn(c).campaign, "pass").campaign;
+    return c;
+  };
+
+  it("is last round's deck plus the cards discovered", () => {
+    let c = playRound(fresh(), 10);
+    c = startNextRound(endRound(c).campaign).campaign;
+    expect(carryOverDeck(c)).toBeNull(); // discovery still to do
+    c = confirmDiscovery(c, false).campaign;
+    expect(carryOverDeck(c)).toEqual({ previous: 10, added: 2, total: 12 });
+  });
+
+  it("adds nothing for a parchment card or a skipped discovery", () => {
+    let c = startNextRound(endRound(playRound(fresh(), 10)).campaign).campaign;
+    expect(carryOverDeck(confirmDiscovery(c, true).campaign)).toEqual({ previous: 10, added: 0, total: 10 });
+    expect(carryOverDeck(skipDiscovery(c).campaign)?.total).toBe(10);
+  });
+
+  it("needs last round's deck size and only applies before the first turn", () => {
+    let c = startNextRound(endRound(endTurn(startTurn(fresh()).campaign, "pass").campaign).campaign).campaign;
+    expect(carryOverDeck(confirmDiscovery(c, false).campaign)).toBeNull();
+    c = confirmDiscovery(startNextRound(endRound(playRound(fresh(), 10)).campaign).campaign, false).campaign;
+    c = startTurn(c).campaign;
+    expect(carryOverDeck(c)).toBeNull();
   });
 });

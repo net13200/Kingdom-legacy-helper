@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CARDS_PER_ADVANCE, CARDS_PER_TURN, END_OF_ROUND_STEPS, END_OF_TURN_STEPS } from "../logic/defaults";
 import { DiscoveryCard } from "./DiscoveryCard";
 import { shuffledCardCount } from "../logic/kingdom";
+import { carryOverDeck, discoveryPending } from "../logic/discovery";
 import {
   activeExpansion,
   adjustDeck,
@@ -73,6 +74,7 @@ function DeckPanel({ campaign, act }: { campaign: Campaign; act: Act }) {
   const [value, setValue] = useState("");
   const needsCount = round.deckRemaining === null && !round.over;
   const logged = shuffledCardCount(campaign);
+  const carry = carryOverDeck(campaign);
   const showForm = editing || (needsCount && turn.number === 0);
 
   const submit = (e: React.FormEvent) => {
@@ -143,7 +145,27 @@ function DeckPanel({ campaign, act }: { campaign: Campaign; act: Act }) {
               </button>
             )}
           </div>
-          {logged > 0 && turn.number === 0 && (
+          {carry && (
+            <button
+              type="button"
+              className="btn btn--accent btn--wide"
+              onClick={() => {
+                if (act("Deck: last round + new cards", (c) => setDeckCount(c, carry.total))) {
+                  setEditing(false);
+                  setValue("");
+                }
+              }}
+            >
+              {carry.added > 0 ? `Add ${carry.added} new card${carry.added === 1 ? "" : "s"}: ` : "Same as last round: "}
+              {carry.previous}
+              {carry.added > 0 ? ` + ${carry.added} = ${carry.total}` : ""}
+            </button>
+          )}
+          {!carry && discoveryPending(campaign) && turn.number === 0 && (
+            <p className="muted small">Finish this round's discovery to add the new cards to last round's deck in one tap.</p>
+          )}
+          {carry && <p className="muted small">Adjust it if cards were destroyed, purged or added since last round.</p>}
+          {logged > 0 && turn.number === 0 && !carry && (
             <button type="button" className="link-btn" onClick={() => setValue(String(logged))}>
               Your kingdom log has {logged} card{logged === 1 ? "" : "s"} to shuffle. Use {logged}
             </button>
