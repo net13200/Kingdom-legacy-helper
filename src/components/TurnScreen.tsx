@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { CARDS_PER_ADVANCE, CARDS_PER_TURN, END_OF_ROUND_STEPS, END_OF_TURN_STEPS } from "../logic/defaults";
+import { DiscoveryCard } from "./DiscoveryCard";
+import { shuffledCardCount } from "../logic/kingdom";
 import {
+  activeExpansion,
+  adjustDeck,
+  finishGame,
+  isFinalRound,
   adjustResource,
   advance,
   canAdvance,
@@ -17,16 +23,35 @@ import {
   toggleTurnStep,
 } from "../logic/turn";
 import type { Campaign } from "../logic/types";
-import type { CampaignAction } from "../useLedger";
+import type { Act } from "./common";
 
-type Act = (label: string, action: CampaignAction, opts?: { silent?: boolean }) => boolean;
-
-export function TurnScreen({ campaign, act }: { campaign: Campaign; act: Act }) {
+export function TurnScreen({ campaign, act, goTo }: { campaign: Campaign; act: Act; goTo: (tab: string) => void }) {
   const { round, turn } = campaign;
   const lastTurn = turn.active && round.deckRemaining === 0;
+  const final = isFinalRound(campaign);
+  const exp = activeExpansion(campaign);
+
+  if (campaign.gameOver) {
+    return (
+      <section className="panel panel--notice">
+        <h2 className="panel-title">Game over</h2>
+        <p>Count the fame in your kingdom, add your purged fame, and write down your score.</p>
+        <button type="button" className="btn btn--primary btn--wide" onClick={() => goTo("campaign")}>
+          Go to scoring
+        </button>
+      </section>
+    );
+  }
 
   return (
     <>
+      {final && (
+        <p className="banner banner--final" role="alert">
+          <strong>FINAL ROUND</strong>
+          {exp ? ` · last round of ${exp.name}` : ""}
+        </p>
+      )}
+      <DiscoveryCard campaign={campaign} act={act} />
       <DeckPanel campaign={campaign} act={act} />
 
       {lastTurn && (
@@ -47,6 +72,7 @@ function DeckPanel({ campaign, act }: { campaign: Campaign; act: Act }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const needsCount = round.deckRemaining === null && !round.over;
+  const logged = shuffledCardCount(campaign);
   const showForm = editing || (needsCount && turn.number === 0);
 
   const submit = (e: React.FormEvent) => {
@@ -106,7 +132,7 @@ function DeckPanel({ campaign, act }: { campaign: Campaign; act: Act }) {
               step={1}
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder="e.g. 14"
+              placeholder={logged ? String(logged) : "e.g. 14"}
             />
             <button type="submit" className="btn btn--primary" disabled={value === ""}>
               Save
@@ -117,7 +143,24 @@ function DeckPanel({ campaign, act }: { campaign: Campaign; act: Act }) {
               </button>
             )}
           </div>
+          {logged > 0 && turn.number === 0 && (
+            <button type="button" className="link-btn" onClick={() => setValue(String(logged))}>
+              Your kingdom log has {logged} card{logged === 1 ? "" : "s"} to shuffle. Use {logged}
+            </button>
+          )}
         </form>
+      )}
+
+      {!showForm && round.deckRemaining !== null && turn.active && (
+        <div className="deck-adjust">
+          <span className="muted small">A card effect moved cards:</span>
+          <button type="button" className="btn btn--ghost btn--small" aria-label="One card taken from the deck" onClick={() => act("Deck −1", (c) => adjustDeck(c, -1))}>
+            −1
+          </button>
+          <button type="button" className="btn btn--ghost btn--small" aria-label="One card put on the deck" onClick={() => act("Deck +1", (c) => adjustDeck(c, 1))}>
+            +1
+          </button>
+        </div>
       )}
     </section>
   );
@@ -143,7 +186,7 @@ function ActionPanel({ campaign, act }: { campaign: Campaign; act: Act }) {
           : round.over
             ? "Round over. Work through the end-of-round steps below."
             : turn.ended
-              ? `You ${turn.ended === "upgrade" ? "upgraded a card" : "passed"}. Finish the end-of-turn steps, then start the next turn.`
+              ? `You ${turn.ended === "upgrade" ? "upgraded a card" : turn.ended === "time" ? "used a time effect" : "passed"}. Finish the end-of-turn steps, then start the next turn.`
               : "Start your first turn when the deck is ready."}
       </p>
       <div className="actions">
@@ -172,6 +215,13 @@ function ActionPanel({ campaign, act }: { campaign: Campaign; act: Act }) {
           onClick={() => act("Pass", (c) => endTurn(c, "pass"))}
           label="Pass"
           hint="Ends turn"
+        />
+        <ActionButton
+          className="action--wide"
+          blocked={turn.active ? null : "Start a turn first."}
+          onClick={() => act("Time effect", (c) => endTurn(c, "time"))}
+          label="Time effect"
+          hint="Discard the card and end the turn"
         />
       </div>
     </section>
@@ -313,13 +363,15 @@ function ChecklistPanel({ campaign, act }: { campaign: Campaign; act: Act }) {
                 </li>
               ))}
             </ol>
-            <button
-              type="button"
-              className="btn btn--primary btn--wide"
-              onClick={() => act("Start next round", startNextRound)}
-            >
-              Start round {round.number + 1}
-            </button>
+            {isFinalRound(campaign) ? (
+              <button type="button" className="btn btn--primary btn--wide" onClick={() => act("Finish game", finishGame)}>
+                {activeExpansion(campaign) ? "Last round done: score it" : "Final round done: count your fame"}
+              </button>
+            ) : (
+              <button type="button" className="btn btn--primary btn--wide" onClick={() => act("Start next round", startNextRound)}>
+                Start round {round.number + 1}
+              </button>
+            )}
           </div>
         )}
 

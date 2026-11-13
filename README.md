@@ -8,17 +8,30 @@ Live: https://net13200.github.io/Kingdom-legacy-helper/
 
 Unofficial fan-made helper. *Kingdom Legacy* is © FryxGames.
 
-## What it does (Phase 1: turn screen)
+## What it does
 
-- **Resources**: Coin, Metal, Wood, Stone, Sword, Trade Good, with big − / + buttons and **Clear all**. Add custom resources for expansions from the menu.
-- **Turn buttons**: **New turn (play 4)**, **Advance (+2)**, **Upgrade** and **Pass**. Each one clears your resources automatically (new cards entered play, or the turn ended) and says so in a short message.
-- **Deck counter**: enter the deck size at the start of the round. The app takes 4 per turn and 2 per Advance, plays fewer when fewer are left, and warns **Last turn of the round** when the deck runs out.
-- **End-of-turn checklist**: end-of-turn effects → discard (except cards that stay in play) → new turn or end of round. When the deck is empty, the end-of-round steps appear with a **Start round N** button.
-- **Undo / redo** for every action (50 steps, the last 30 survive closing the app).
-- **Saves automatically** on the device after every change. **Export / import** the whole campaign as a JSON backup from the menu.
-- Dark mode by default, light mode in the menu. Works fully offline once opened.
+Five tabs, all offline, all saved on the device after every change, with undo / redo for every action (50 steps; the last 30 survive closing the app).
 
-Coming next, one phase at a time: round and discovery tracker, kingdom log, rules reference, campaigns.
+**Turn**
+- Resources (Coin, Metal, Wood, Stone, Sword, Trade Good, plus custom ones for expansions) with big − / + buttons and **Clear all**.
+- **New turn (play 4)**, **Advance (+2)**, **Upgrade**, **Pass** and **Time effect**. Each one that brings in cards or ends the turn clears your resources and says so.
+- Deck counter: 4 per turn, 2 per Advance, fewer when fewer are left, a **Last turn of the round** warning at 0, and −1 / +1 for effects that move cards onto or off the deck.
+- End-of-turn and end-of-round checklists, then **Start round N** (or scoring after the final round).
+
+**Rounds**
+- Current round, **Discover next: #X and #Y**, and "Was #X a parchment card?" (a parchment card is the only card discovered that round, and is destroyed).
+- Reset-window status (open until #23 is discovered, with the cards to set aside), a countdown to #70 and a **FINAL ROUND** banner.
+- An editable discovery counter, "discovered by a card effect", and round history with notes.
+
+**Kingdom**: a log you fill in yourself as you discover cards (nothing is pre-filled): serial, name, type, keywords, orientation, status, resource stickers, other stickers, marked checkboxes, crossed-out one-time effects, equipment, fame and notes. Filter by status or type, search by name or number. Running fame, purged fame and score preview.
+
+**Rules**: your own notes in one file, `src/content/rules.md` (placeholders for now), plus a link to the official rules PDF.
+
+**Campaign**: kingdom name and code, save slots, score (kingdom fame + purged fame) and the base-game score, the expansion tracker (up to 10, each once, score after each, purge steps), and the purge helper (purge 12, purge 1 permanent card, running purged fame).
+
+**Menu**: dark / light mode, custom resources, JSON export / import.
+
+The app never shows anything about cards you haven't discovered: there is no card data in it.
 
 ## Run it
 
@@ -62,9 +75,14 @@ Drag the `dist/` folder onto https://app.netlify.com/drop, or connect the reposi
 
 - `src/logic/`: all game rules as pure functions, with Vitest tests next to them.
   - `turn.ts`: resources, deck counting, turn and round flow.
+  - `discovery.ts`: discovery order, parchment cards, the reset window and the final round.
+  - `kingdom.ts`: the card log, fame and score.
+  - `purge.ts`, `expansions.ts`, `campaigns.ts`: purges, expansions and save slots.
   - `history.ts`: the undo / redo stack.
-  - `backup.ts`: backup format, validation and repair of saved data.
+  - `backup.ts`: backup format, validation, and upgrading older saves.
+  - `markdown.ts`: the small Markdown reader for the rules notes.
   - `defaults.ts`, `types.ts`: starting values and the data model.
-- `src/components/`: the turn screen, the menu and the toast.
+- `src/components/`: one file per tab, plus the card editor, menu and toast.
+- `src/content/rules.md`: your rules notes.
 - `src/sw-template.js`: the offline service worker. The build fills in the list of files to cache.
 - `public/splash.js`: the SugiGames intro animation, shared with the portal.

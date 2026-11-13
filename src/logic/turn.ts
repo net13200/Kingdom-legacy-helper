@@ -6,9 +6,10 @@ import {
   freshRound,
   freshTurn,
   newId,
+  roundRecord,
   zeroCounts,
 } from "./defaults";
-import type { Campaign, TurnEnd } from "./types";
+import type { Campaign, RoundRecord, TurnEnd } from "./types";
 
 /**
  * Every game action is a pure function: Campaign in, ActionResult out.
@@ -22,6 +23,27 @@ export interface ActionResult {
 
 const ok = (campaign: Campaign, ...notices: string[]): ActionResult => ({ campaign, notices });
 const fail = (campaign: Campaign, error: string): ActionResult => ({ campaign, notices: [], error });
+
+/** Apply a change to the history record of the current round (creating it if missing). */
+export function updateCurrentRecord(c: Campaign, fn: (r: RoundRecord) => RoundRecord): Campaign {
+  const n = c.round.number;
+  const exists = c.rounds.some((r) => r.number === n);
+  const rounds = exists
+    ? c.rounds.map((r) => (r.number === n ? fn(r) : r))
+    : [...c.rounds, fn(roundRecord(n, "none", c.activeExpansionId))];
+  return { ...c, rounds };
+}
+
+export function activeExpansion(c: Campaign) {
+  return c.expansions.find((e) => e.id === c.activeExpansionId && e.status === "playing") ?? null;
+}
+
+/** Is the current round the last one (card #70 found, or an expansion's last planned round)? */
+export function isFinalRound(c: Campaign): boolean {
+  const exp = activeExpansion(c);
+  if (exp) return exp.roundsPlanned !== null && c.round.number >= exp.startRound + exp.roundsPlanned - 1;
+  return c.finalRound !== null && c.round.number >= c.finalRound;
+}
 
 export const LAST_TURN_WARNING = "Last turn of the round: the deck is empty.";
 
@@ -87,7 +109,16 @@ export function setDeckCount(c: Campaign, count: number): ActionResult {
     deckRemaining: count,
     deckSize: roundStarted ? c.round.deckSize ?? count : count,
   };
-  return ok({ ...c, round }, `Deck: ${count} card${count === 1 ? "" : "s"}.`);
+  const next = updateCurrentRecord({ ...c, round }, (r) => ({ ...r, deckSize: round.deckSize }));
+  return ok(next, `Deck: ${count} card${count === 1 ? "" : "s"}.`);
+}
+
+/** A card effect put a card on the deck (+1) or took one from it (-1). */
+export function adjustDeck(c: Campaign, delta: number): ActionResult {
+  if (c.round.deckRemaining === null) return fail(c, "Count the deck first.");
+  const deckRemaining = c.round.deckRemaining + delta;
+  if (deckRemaining < 0) return fail(c, "The deck is already empty.");
+  return ok({ ...c, round: { ...c.round, deckRemaining } }, `Deck: ${deckRemaining} card${deckRemaining === 1 ? "" : "s"}.`);
 }
 
 function clearedNotice(c: Campaign, reason: string): string {
@@ -97,6 +128,7 @@ function clearedNotice(c: Campaign, reason: string): string {
 // ---------- Turn ----------
 
 export function canStartTurn(c: Campaign): string | null {
+  if (c.gameOver) return "The game is over. See the Campaign tab.";
   if (c.turn.active) return "Finish this turn first: upgrade a card or pass.";
   if (c.round.over) return "The round is over. Start the next round.";
   if (c.round.deckRemaining === 0) return "The deck is empty. End the round.";
@@ -107,15 +139,11 @@ export function startTurn(c: Campaign): ActionResult {
   const blocked = canStartTurn(c);
   if (blocked) return fail(c, blocked);
   const { campaign, drawn } = drawFromDeck(clearResources(c), CARDS_PER_TURN);
-  const next: Campaign = {
-    ...campaign,
-    turn: {
-      ...freshTurn(),
-      number: c.turn.number + 1,
-      active: true,
-      cardsPlayed: drawn,
-    },
-  };
+  const number = c.turn.number + 1;
+  const next: Campaign = updateCurrentRecord(
+    { ...campaign, turn: { ...freshTurn(), number, active: true, cardsPlayed: drawn } },
+    (r) => ({ ...r, turns: number }),
+  );
   const notices = [clearedNotice(c, `${drawn} new card${drawn === 1 ? "" : "s"} entered play`)];
   if (next.round.deckRemaining === 0) notices.push(LAST_TURN_WARNING);
   return { campaign: next, notices };
@@ -148,9 +176,15 @@ export function endTurn(c: Campaign, how: TurnEnd): ActionResult {
     turn: { ...c.turn, active: false, ended: how, checklist: END_OF_TURN_STEPS.map(() => false) },
     round: { ...c.round, over: deckEmpty },
   };
-  const label = how === "upgrade" ? "upgraded a card" : "passed";
+  const label = how === "upgrade" ? "upgraded a card" : how === "time" ? "time effect" : "passed";
   const notices = [clearedNotice(c, `turn ended (${label})`)];
-  if (deckEmpty) notices.push("The deck is empty: this round ends after the end-of-turn steps.");
+  if (deckEmpty) {
+    notices.push(
+      isFinalRound(c)
+        ? "The deck is empty: this was the final round."
+        : "The deck is empty: this round ends after the end-of-turn steps.",
+    );
+  }
   return { campaign: next, notices };
 }
 
@@ -163,12 +197,33 @@ export function endRound(c: Campaign): ActionResult {
 
 export function startNextRound(c: Campaign): ActionResult {
   if (c.turn.active) return fail(c, "Finish this turn first: upgrade a card or pass.");
+  if (c.gameOver) return fail(c, "The game is over. Start an expansion from the Campaign tab.");
   if (!c.round.over) return fail(c, "The round isn't over yet.");
+  if (isFinalRound(c)) {
+    return fail(c, activeExpansion(c) ? "That was the expansion's last round. Finish it on the Campaign tab." : "That was the final round. Finish the game.");
+  }
   const number = c.round.number + 1;
+  const exp = activeExpansion(c);
+  const discovery = exp && !exp.discoversCards ? "none" : "pending";
+  const next: Campaign = {
+    ...clearResources(c),
+    round: freshRound(number),
+    turn: freshTurn(),
+    rounds: [...c.rounds.filter((r) => r.number !== number), roundRecord(number, discovery, c.activeExpansionId)],
+  };
   return ok(
-    { ...clearResources(c), round: freshRound(number), turn: freshTurn() },
-    `Round ${number} started. Count your deck.`,
+    next,
+    discovery === "pending"
+      ? `Round ${number} started. Discover new cards, then shuffle and count your deck.`
+      : `Round ${number} started. Shuffle and count your deck.`,
   );
+}
+
+/** After the final round: the game (or expansion chapter) is over and it's time to score. */
+export function finishGame(c: Campaign): ActionResult {
+  if (c.turn.active) return fail(c, "Finish this turn first.");
+  if (c.gameOver) return fail(c, "The game is already over.");
+  return ok({ ...clearResources(c), round: { ...c.round, over: true }, gameOver: true }, "Game over. Count your fame on the Campaign tab.");
 }
 
 // ---------- Checklists ----------

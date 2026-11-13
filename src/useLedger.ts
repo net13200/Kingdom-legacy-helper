@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { commit, redo, undo, type History } from "./logic/history";
 import { loadHistory, saveHistory } from "./logic/storage";
 import type { ActionResult } from "./logic/turn";
+import type { LedgerResult } from "./logic/campaigns";
 import type { Campaign, LedgerState } from "./logic/types";
 
 export type CampaignAction = (c: Campaign) => ActionResult | Campaign;
@@ -56,6 +57,22 @@ export function useLedger() {
     [notify],
   );
 
+  /** Run an action on the whole ledger (save slots). */
+  const actLedger = useCallback(
+    (label: string, action: (l: LedgerState) => LedgerResult) => {
+      const h = historyRef.current;
+      const out = action(h.present);
+      if (out.error) {
+        notify([out.error], "error");
+        return false;
+      }
+      if (out.ledger !== h.present) setHistory(commit(h, out.ledger, label));
+      notify(out.notices);
+      return true;
+    },
+    [notify],
+  );
+
   const replaceLedger = useCallback((label: string, ledger: LedgerState) => {
     setHistory((h) => commit(h, ledger, label));
   }, []);
@@ -81,6 +98,7 @@ export function useLedger() {
     canRedo: history.future.length > 0,
     undoLabel: history.past.at(-1)?.label ?? null,
     act,
+    actLedger,
     replaceLedger,
     undo: doUndo,
     redo: doRedo,

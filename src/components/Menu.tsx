@@ -69,7 +69,7 @@ export function Menu({ open, onClose, theme, setTheme, store }: Props) {
 
   const resetCampaign = () => {
     if (!confirm(`Start "${campaign.name}" over from round 1? You can undo this.`)) return;
-    store.act("Reset campaign", (c) => ({ ...newCampaign(c.name, c.id), resources: c.resources }));
+    store.act("Reset campaign", (c) => ({ ...newCampaign(c.name, c.id), kingdomCode: c.kingdomCode, resources: c.resources, counts: Object.fromEntries(c.resources.map((r) => [r.id, 0])) }));
     onClose();
   };
 
@@ -117,22 +117,6 @@ export function Menu({ open, onClose, theme, setTheme, store }: Props) {
               </button>
             ))}
           </div>
-        </section>
-
-        <section className="sheet-section">
-          <h3>Kingdom</h3>
-          <label className="field">
-            <span>Name</span>
-            <input
-              type="text"
-              defaultValue={campaign.name}
-              key={campaign.id + campaign.name}
-              onBlur={(e) => {
-                const name = e.target.value.trim();
-                if (name && name !== campaign.name) store.act("Rename kingdom", (c) => ({ ...c, name }), { silent: true });
-              }}
-            />
-          </label>
         </section>
 
         <section className="sheet-section">
